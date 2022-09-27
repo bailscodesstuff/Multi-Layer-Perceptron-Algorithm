@@ -1,0 +1,234 @@
+import pandas as pd
+from createNodes import *
+import random
+import numpy as np
+import math
+
+# function to intialise hidden nodes and input nodes and generate random weights and biases for them.
+def generate_hidden_weight_bias(noHiddenNodes, x_trainNumpy, y_trainNumpy, outPutrow=0):
+    # noColumns is noColumns in training data
+    noColumns = np.shape(x_trainNumpy)[1]
+    hiddenLayer = []
+    # generates the hidden nodes
+    # this includes generating the weights and biases
+    for i in range(noHiddenNodes):
+        # weights and biases were both randomly generated using a uniform distribution
+        # between values [-2/n,2/n] where n is the number of columns.
+        weight = random.uniform((-2 / noColumns), (2 / noColumns))
+        bias = random.uniform((-2 / noColumns), (2 / noColumns))
+        # instatiate a hidden node object
+        hidNode = hiddenNode(weight, bias, 0, 0,0)
+        # append each object to an array
+        hiddenLayer.append(hidNode)
+
+    # generate input nodes corresponding to each column
+    inputNodes = []
+    for i in range(noColumns):
+        weights2Hidden = []
+        for j in range(0, noHiddenNodes):
+            # generates the weights from input nodes to hidden node#
+            # weights and biases were both randomly generated using a uniform distribution
+            # between values [-2/n,2/n] where n is the number of columns.
+            weights2Hidden.append(random.uniform((-2 / noColumns), (2 / noColumns)))
+        # instantiate an inputNode object using the weights generated above
+        inNode = inputNode(weights2Hidden, 0, 0, x_trainNumpy[0][i], 0)
+        # append each object to an array
+        inputNodes.append(inNode)
+
+    # generate output node for this hidden layer, it's value correspondes to the training data actual value
+    outNode = outputNode(0, random.uniform((-2 / noColumns), (2 / noColumns)), 0, 0, y_trainNumpy[outPutrow])
+
+    # I returned the hiddenLayer and inputNodes lists as numpy arrays as they are faster than normal arrays.
+    return np.asarray(hiddenLayer), outNode, np.asarray(inputNodes)
+
+
+# function does one forward pass
+def forwardPass(hidLay, outNode, inputNodes):
+    # loops through input nodes and hidden layers and calculates the weighted sum of hiddenNodes
+    for i in range(len(hidLay)):
+        # calculates each hidden weighted sum for each node in the hidden layer.
+        hiddenWeightedSum = hidLay[i].bias
+        # loop through inputNodes and get the weight that corresponds to the respective hiddenLayer, i.
+        # after this loop is done each hidden node will have a weighted sum
+        for j in range(len(inputNodes)):
+            hiddenWeightedSum = hiddenWeightedSum + (inputNodes[j].weight[i] * inputNodes[j].value)
+
+        # apply the hiddenWeightedSum to the sigmid function and use it to find activation
+        activation = 1 / (1 + math.exp(-hiddenWeightedSum))
+        # set the activation of the hiddenNode
+        hidLay[i].activation = activation
+
+    # calculate output weighted sum
+    outputWeightedSum = outNode.bias
+    for i in range(len(hidLay)):
+        outputWeightedSum = outputWeightedSum + (hidLay[i].weight * hidLay[i].activation)
+
+    # calculate activation for outNode
+    outNode.activation = 1 / (1 + np.exp(-outputWeightedSum))
+
+
+def backwardsPass(hidLay, outNode, inputNodes, learningParameter):
+
+    # calculate delta and bias for output nodes
+    outNode.delta = (outNode.value - outNode.activation) * (outNode.activation * (1 - outNode.activation))
+    outNode.bias = outNode.bias + (learningParameter * outNode.delta)
+    # update and set the delta, bias and weight for hidden nodes using the formulas given for sigmoid activation fucntion
+    for i in range(len(hidLay)):
+        hidLay[i].delta = (float(hidLay[i].weight) * outNode.delta) * (
+                float(hidLay[i].activation) * (1 - float(hidLay[i].activation)))
+
+        hidLay[i].bias = hidLay[i].bias + (learningParameter * hidLay[i].delta)
+        hidLay[i].weight = hidLay[i].weight + (learningParameter * outNode.delta * hidLay[i].activation)
+
+        # update weights of input nodes
+        for j in range(len(inputNodes)):
+            weight = inputNodes[j].weight[i] + (
+                    learningParameter * hidLay[i].delta * inputNodes[j].value)
+            inputNodes[j].weight[i] = weight
+
+
+# called in the training data fucntion.
+# allows me to uodate the model with a new row from the training data
+def updateNodes(inputNodes, outNode, x_trainNumpy, y_trainNumpy, rowNumber):
+    noColumns = np.shape(x_trainNumpy)[1]
+    # each inputNode corresponds to a column, so I use this to set the value.
+    for i in range(noColumns):
+        # i represents a  column value
+        inputNodes[i].value = x_trainNumpy[rowNumber][i]
+    # each outnode value corresponds to the same row in x_train
+    outNode.value = y_trainNumpy[rowNumber]
+
+# function to generate inputNodes when testing
+def testingNodes(x_testNumpy, y_testNumpy, outNode, hidLay, inputNodes):
+    noColumns = np.shape(x_testNumpy)[1]
+    testInputNodes = []
+
+    # the weights of new input nodes when training
+    # I loop through the columns first, (column number corresponds to respective inputNode)
+    for i in range(noColumns):
+        testing_weights_to_hidden = []
+        for j in range(0,len(hidLay)):
+            # using hidLay allows me to retrieve the weights generated from the previous row
+            # these weights correspond to the initial weights of the new row's inputNode
+            # i append these weights to an array
+            testing_weights_to_hidden.append(inputNodes[i].weight[j])
+        # instatiate an inputNode object
+        testing_input = inputNode(testing_weights_to_hidden, 0, 0, x_testNumpy[0][i],0)
+        # append new inputNode object to an array
+        testInputNodes.append(testing_input)
+
+    # instatiates an outputNode based on bias of previous outnode, and value from the testing data.
+    testOutNode = outputNode(0, outNode.bias, 0, 0, y_testNumpy[0])
+
+    return testOutNode, testInputNodes
+
+
+
+# function to train my data on a given number of epochs
+def trainingData(inputNodes,hidLay,outNode,interval,x_trainNumpy, y_trainNumpy,startParameter,endParameter,epochs):
+
+    # loops for a given interval number (i.e. 10)
+    for j in range(0,interval):
+        # in annealing the learning parameter is adjusted depending on the epoch number.
+        learningParameter = endParameter + ((startParameter-endParameter) * (1 - (1 / (1 + math.exp(10 - ((20 * j)/epochs))))))
+        # reset data to top of data set after completed interval
+        updateNodes(inputNodes, outputNode, x_trainNumpy, y_trainNumpy, 0)
+        # loop through each row in training data
+        for i in range(0, len(x_trainNumpy)):
+            # forwards and backwards pass on each row of training data
+            forwardPass(hidLay, outNode, inputNodes)
+            backwardsPass(hidLay, outNode, inputNodes, learningParameter)
+            # 353 is the max number of rows in training data
+            if i == 353:
+                break
+            else:
+                # update to the next row of training data
+                updateNodes(inputNodes, outNode, x_trainNumpy, y_trainNumpy, i + 1)
+
+# function does one forward pass of testing data and calulates error
+def testingData(testInputNodes,hidLay,testOutNode,x_testNumpy,y_testNumpy):
+    error = []
+
+    for i in range(0, len(x_testNumpy)):
+        # does one forward pass of the current testing output and input nodes
+        # hidden layer stays the same
+        forwardPass(hidLay, testOutNode, testInputNodes)
+        # calulation for the error of each row of testing data
+        error.append((testOutNode.value - testOutNode.activation) ** 2)
+
+        # 117 is the no. rows in the x_testNumpy file
+        if i == 117:
+            break
+        else:
+            # creates a new row of data / objects of input nodes and out put nodes
+            updateNodes(testInputNodes, testOutNode, x_testNumpy, y_testNumpy, i+1)
+    # calulate the mse
+    mse = sum(error) / len(error)
+    return mse
+
+def backPropAlgorithm(inputNodes,hidLay,outNode,learningParameter,epochs,x_trainNumpy, y_trainNumpy,x_testNumpy, y_testNumpy):
+    # a list of mse generated from the testing set within the intervals
+    mseList = []
+    # interval = 10
+    interval = int(epochs/(epochs/10))
+    # number of mse generated, i.e. if epochs = 2000, I will generate 200 Mse values
+    noMse = int(epochs/10)
+    for i in range(0,noMse):
+
+        # trains the data
+        trainingData(inputNodes, hidLay, outNode, learningParameter, interval, x_trainNumpy, y_trainNumpy,epochs)
+
+        # generates new input and output nodes for testing
+        testOutNode, testInputNodes = testingNodes(x_testNumpy, y_testNumpy, outNode, hidLay, inputNodes, outputRow=0)
+
+        # mse is returned from thias function and appended to a list
+        mse = testingData(testInputNodes,hidLay,testOutNode,x_testNumpy,y_testNumpy)
+        mseList.append(mse)
+
+    return mseList
+
+
+def main():
+    read_xtrain_data = pd.read_csv("../../x_train.csv")
+    # read_train_data.to_numpy()
+    x_trainData = read_xtrain_data.iloc[:, 1:]
+    x_trainNumpy = pd.DataFrame.to_numpy(x_trainData)
+
+    read_ytrain_data = pd.read_csv("../../y_train.csv")
+    # read_test_data.to_numpy()
+    y_trainData = read_ytrain_data.iloc[:, 1:]
+    y_trainNumpy = pd.DataFrame.to_numpy(y_trainData)
+
+    # TESTING DATA
+    read_xtest_data = pd.read_csv("../../X_test.csv")
+    x_testData = read_xtest_data.iloc[:, 1:]
+    x_testNumpy = pd.DataFrame.to_numpy(x_testData)
+
+    read_ytest_data = pd.read_csv("../../y_test.csv")
+    # read_test_data.to_numpy()
+    y_testData = read_ytest_data.iloc[:, 1:]
+    y_testNumpy = pd.DataFrame.to_numpy(y_testData)
+
+
+
+    noHiddenNodes = 2
+
+    hidLay, outNode, inputNodes = generate_hidden_weight_bias(noHiddenNodes, x_trainNumpy, y_trainNumpy, outPutrow=0)
+
+    epochs = 2000
+    # define start and end parameters for annealing
+    startParameter = 0.1
+    endParameter = 0.01
+    mseList = backPropAlgorithm(inputNodes,hidLay,outNode,epochs,x_trainNumpy, y_trainNumpy,x_testNumpy, y_testNumpy,startParameter,endParameter)
+
+    mseListNp = np.array(mseList)
+    mse_df = pd.DataFrame(mseListNp)
+
+    mse_df.to_excel("sig_annealing" +str(noHiddenNodes) + "_" + str(epochs)+"_"+".xlsx")
+
+
+
+
+
+
+main()
